@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Pulsecheck — Mental Health Score Predictor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div class="app">
+
+  <!-- LEFT BRAND PANEL -->
+  <aside class="brand">
+    <div class="brand__top">
+      <span class="brand__mark" aria-hidden="true">
+        <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M4 26 H14 L18 14 L24 38 L28 20 L32 26 H44" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+      <span class="brand__name">Pulsecheck</span>
+    </div>
+
+    <div class="brand__body">
+      <h1 class="brand__headline">Understand the weight<br>a school week carries.</h1>
+      <p class="brand__sub">A short set of questions about study, sleep and screens — turned into one predicted mental health score, using a model trained on student habits.</p>
+    </div>
+
+    <ol class="brand__steps" id="stepList">
+      <li class="brand__step is-active" data-step="0">
+        <span class="brand__step-index">01</span>
+        <span class="brand__step-label">About you</span>
+      </li>
+      <li class="brand__step" data-step="1">
+        <span class="brand__step-index">02</span>
+        <span class="brand__step-label">Digital habits</span>
+      </li>
+      <li class="brand__step" data-step="2">
+        <span class="brand__step-index">03</span>
+        <span class="brand__step-label">Daily rhythm</span>
+      </li>
+    </ol>
+
+    <p class="brand__foot">Not a clinical diagnosis — a modeled estimate for reflection only.</p>
+  </aside>
+
+  <!-- RIGHT WIZARD PANEL -->
+  <main class="wizard">
+    <div class="wizard__progress" aria-hidden="true">
+      <span class="dot is-active" data-dot="0"></span>
+      <span class="dot" data-dot="1"></span>
+      <span class="dot" data-dot="2"></span>
+    </div>
+
+    <form id="predictForm" novalidate>
+
+      <!-- STEP 1 -->
+      <section class="step is-active" data-step="0">
+        <h2 class="step__title">About you</h2>
+        <p class="step__hint">Basic details the model uses as context.</p>
+
+        <div class="field-grid">
+          <div class="field">
+            <label for="age">Age</label>
+            <input type="number" id="age" name="age" min="10" max="100" placeholder="e.g. 21" required>
+            <span class="field__note">10 – 100 years</span>
+          </div>
+
+          <div class="field">
+            <label for="gender">Gender</label>
+            <select id="gender" name="gender" required>
+              <option value="" disabled selected>Select</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="country">Country</label>
+            <input type="text" id="country" name="country" list="countryList" placeholder="e.g. India" required autocomplete="off">
+            <datalist id="countryList">
+              <option value="India"></option>
+              <option value="USA"></option>
+              <option value="Canada"></option>
+              <option value="Australia"></option>
+              <option value="UK"></option>
+              <option value="Germany"></option>
+              <option value="Mexico"></option>
+              <option value="Turkey"></option>
+              <option value="France"></option>
+              <option value="Other"></option>
+            </datalist>
+            <span class="field__note">Any country — uncommon ones are grouped as "Other"</span>
+          </div>
+
+          <div class="field">
+            <label for="academic_level">Academic level</label>
+            <select id="academic_level" name="academic_level" required>
+              <option value="" disabled selected>Select</option>
+              <option value="High School">High School</option>
+              <option value="Undergraduate">Undergraduate</option>
+              <option value="Graduate">Graduate</option>
+            </select>
+          </div>
+        </div>
+      </section>
+
+      <!-- STEP 2 -->
+      <section class="step" data-step="1">
+        <h2 class="step__title">Digital habits</h2>
+        <p class="step__hint">How screens fit into an average day.</p>
+
+        <div class="field-grid">
+          <div class="field">
+            <label for="most_used_platform">Most-used platform</label>
+            <select id="most_used_platform" name="most_used_platform" required>
+              <option value="" disabled selected>Select</option>
+              <option>Instagram</option>
+              <option>YouTube</option>
+              <option>TikTok</option>
+              <option>WhatsApp</option>
+              <option>Facebook</option>
+              <option>Snapchat</option>
+              <option>Twitter</option>
+              <option>LinkedIn</option>
+              <option>WeChat</option>
+              <option>LINE</option>
+              <option>KakaoTalk</option>
+              <option>VKontakte</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="purpose_of_use">Main purpose of use</label>
+            <select id="purpose_of_use" name="purpose_of_use" required>
+              <option value="" disabled selected>Select</option>
+              <option>Entertainment</option>
+              <option>Education</option>
+              <option>Networking</option>
+              <option>News</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="avg_daily_usage_hours">Avg. daily usage (hours)</label>
+            <input type="number" id="avg_daily_usage_hours" name="avg_daily_usage_hours" min="0" max="24" step="0.1" placeholder="e.g. 4.5" required>
+          </div>
+
+          <div class="field">
+            <label for="daily_unlocks">Daily phone unlocks</label>
+            <input type="number" id="daily_unlocks" name="daily_unlocks" min="0" step="1" placeholder="e.g. 60" required>
+          </div>
+        </div>
+      </section>
+
+      <!-- STEP 3 -->
+      <section class="step" data-step="2">
+        <h2 class="step__title">Daily rhythm</h2>
+        <p class="step__hint">Where the rest of the day goes.</p>
+
+        <div class="field-grid">
+          <div class="field">
+            <label for="study_hours">Study hours / day</label>
+            <input type="number" id="study_hours" name="study_hours" min="0" max="24" step="0.1" placeholder="e.g. 3" required>
+          </div>
+
+          <div class="field">
+            <label for="physical_activity_hours">Physical activity (hours)</label>
+            <input type="number" id="physical_activity_hours" name="physical_activity_hours" min="0" max="24" step="0.1" placeholder="e.g. 1" required>
+          </div>
+
+          <div class="field">
+            <label for="sleep_hours_per_night">Sleep / night (hours)</label>
+            <input type="number" id="sleep_hours_per_night" name="sleep_hours_per_night" min="0" max="24" step="0.1" placeholder="e.g. 7" required>
+          </div>
+
+          <div class="field">
+            <label for="stress_level">Self-rated stress level</label>
+            <select id="stress_level" name="stress_level" required>
+              <option value="" disabled selected>Select</option>
+              <option>Low</option>
+              <option>Medium</option>
+              <option>High</option>
+              <option>Very High</option>
+            </select>
+          </div>
+        </div>
+      </section>
+
+      <div class="wizard__nav">
+        <button type="button" class="btn btn--ghost" id="backBtn">Back</button>
+        <button type="button" class="btn btn--primary" id="nextBtn">Continue</button>
+        <button type="submit" class="btn btn--primary is-hidden" id="submitBtn">
+          <span class="btn__label">Get my score</span>
+        </button>
+      </div>
+    </form>
+  </main>
+</div>
+
+<!-- TOASTS -->
+<div class="toast-stack" id="toastStack" aria-live="polite"></div>
+
+<!-- LOADING OVERLAY -->
+<div class="overlay" id="loadingOverlay" aria-hidden="true">
+  <div class="loader">
+    <span class="loader__ring"></span>
+    <p class="loader__text">Reading the signals…</p>
+  </div>
+</div>
+
+<!-- RESULT PANEL -->
+<div class="result" id="resultPanel" aria-hidden="true">
+  <div class="result__scrim" id="resultScrim"></div>
+  <div class="result__card" role="dialog" aria-modal="true" aria-labelledby="resultTitle">
+    <button class="result__close" id="resultClose" aria-label="Close">&times;</button>
+
+    <p class="result__eyebrow">Predicted mental health score</p>
+
+    <div class="gauge">
+      <svg viewBox="0 0 200 120" class="gauge__svg">
+        <path class="gauge__track" d="M20 110 A80 80 0 0 1 180 110" />
+        <path class="gauge__fill" id="gaugeFill" d="M20 110 A80 80 0 0 1 180 110" />
+      </svg>
+      <div class="gauge__value">
+        <span id="scoreValue">--</span>
+        <small>/ 10</small>
+      </div>
+    </div>
+
+    <h2 class="result__tier" id="resultTier">—</h2>
+    <p class="result__desc" id="resultDesc">—</p>
+
+    <p class="result__disclaimer">This is a statistical estimate from a machine-learning model, not a clinical assessment. If you're struggling, please talk to a counselor, doctor, or someone you trust.</p>
+
+    <button class="btn btn--primary" id="retakeBtn">Try different answers</button>
+  </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
