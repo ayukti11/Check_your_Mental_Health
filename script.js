@@ -1,286 +1,806 @@
 (() => {
-  const API_URL = 'https://mental-health-score-prediction-app.onrender.com';
+  "use strict";
 
-  const form = document.getElementById('predictForm');
-  const steps = Array.from(document.querySelectorAll('.step'));
-  const dots = Array.from(document.querySelectorAll('.dot'));
-  const brandSteps = Array.from(document.querySelectorAll('.brand__step'));
+  // API configuration
+  const API_URL = "http://127.0.0.1:8000";
 
-  const backBtn = document.getElementById('backBtn');
-  const nextBtn = document.getElementById('nextBtn');
-  const submitBtn = document.getElementById('submitBtn');
+  const form = document.getElementById("predict-form");
+  const formView = document.getElementById("form-view");
+  const resultView = document.getElementById("result-view");
+  const resultCard = document.getElementById("result-card");
+  const submitButton = document.getElementById("submit-button");
+  const resetButton = document.getElementById("reset-button");
+  const toast = document.getElementById("toast");
+  const universeCanvas = document.getElementById("universe");
+  const confettiCanvas = document.getElementById("confetti-canvas");
+  const reducedMotion = window.matchMedia(
+    "(prefers-reduced-motion: reduce)"
+  ).matches;
 
-  const toastStack = document.getElementById('toastStack');
-  const loadingOverlay = document.getElementById('loadingOverlay');
+  let toastTimer;
+  let stars = [];
+  let shootingStars = [];
+  let animationFrame = null;
+  let confettiFrame = null;
+  let confettiParticles = [];
+  let lastConfettiTime = 0;
+  let pointer = { x: 0, y: 0 };
 
-  const resultPanel = document.getElementById('resultPanel');
-  const resultScrim = document.getElementById('resultScrim');
-  const resultClose = document.getElementById('resultClose');
-  const retakeBtn = document.getElementById('retakeBtn');
-  const gaugeFill = document.getElementById('gaugeFill');
-  const scoreValue = document.getElementById('scoreValue');
-  const resultTier = document.getElementById('resultTier');
-  const resultDesc = document.getElementById('resultDesc');
+  // Update the displayed value and filled track for each range slider.
+  function updateRange(input) {
+    const output = document.getElementById(`${input.id}-output`);
+    const value = Number(input.value);
+    const formatted = Number.isInteger(value) ? value : value.toFixed(1);
 
-  let currentStep = 0;
+    if (output) {
+      output.textContent = `${formatted} ${value === 1 ? "hr" : "hrs"}`;
+    }
 
-  // ---------- FIELD DEFINITIONS PER STEP ----------
-  const stepFields = [
-    ['age', 'gender', 'country', 'academic_level'],
-    ['most_used_platform', 'purpose_of_use', 'avg_daily_usage_hours', 'daily_unlocks'],
-    ['study_hours', 'physical_activity_hours', 'sleep_hours_per_night', 'stress_level'],
-  ];
+    const min = Number(input.min);
+    const max = Number(input.max);
+    const percent = ((value - min) / (max - min)) * 100;
 
-  const numericRules = {
-    age: { min: 10, max: 100, label: 'Age' },
-    avg_daily_usage_hours: { min: 0, max: 24, label: 'Avg. daily usage hours' },
-    daily_unlocks: { min: 0, max: null, label: 'Daily phone unlocks' },
-    study_hours: { min: 0, max: 24, label: 'Study hours' },
-    physical_activity_hours: { min: 0, max: 24, label: 'Physical activity hours' },
-    sleep_hours_per_night: { min: 0, max: 24, label: 'Sleep hours per night' },
-  };
-
-  // ---------- TOASTS ----------
-  function showToast(message, kind = 'error') {
-    const toast = document.createElement('div');
-    toast.className = `toast toast--${kind === 'info' ? 'info' : 'error'}`;
-    toast.textContent = message;
-    toastStack.appendChild(toast);
-
-    setTimeout(() => {
-      toast.classList.add('is-leaving');
-      toast.addEventListener('animationend', () => toast.remove(), { once: true });
-    }, 4200);
+    input.style.background =
+      `linear-gradient(90deg, #9174ff 0%, #42cfe1 ${percent}%, rgba(255,255,255,.13) ${percent}%)`;
   }
 
-  // ---------- VALIDATION ----------
-  function markInvalid(el, invalid) {
-    el.classList.toggle('is-invalid', invalid);
-  }
+  document.querySelectorAll('input[type="range"]').forEach((input) => {
+    updateRange(input);
+    input.addEventListener("input", () => updateRange(input));
+  });
 
-  function validateStep(stepIndex) {
-    const fields = stepFields[stepIndex];
-    let valid = true;
-    const errors = [];
+  // Display an inline error message for a form field.
+  function setFieldError(name, message) {
+    const error = document.getElementById(`${name}-error`);
+    if (error) error.textContent = message;
 
-    fields.forEach((name) => {
-      const el = form.elements[name];
-      if (!el) return;
-      markInvalid(el, false);
+    const control = form.elements.namedItem(name);
 
-      const value = el.value.trim();
-      if (value === '') {
-        markInvalid(el, true);
-        errors.push(`Please fill in "${el.previousElementSibling?.textContent || name}".`);
-        valid = false;
-        return;
+    // Radio groups return a collection, so use the first radio as the field element.
+    const element = control instanceof Element ? control : control?.[0];
+    const field = element?.closest(".field");
+
+    if (field) {
+      field.classList.toggle("invalid", Boolean(message));
+    }
+
+    // Set aria-invalid on regular inputs and selects, not on a radio group.
+    if (element && element.type !== "radio") {
+      if (message) {
+        element.setAttribute("aria-invalid", "true");
+      } else {
+        element.removeAttribute("aria-invalid");
       }
+    }
+  }
 
-      if (numericRules[name]) {
-        const num = Number(value);
-        const rule = numericRules[name];
-        if (Number.isNaN(num)) {
-          markInvalid(el, true);
-          errors.push(`${rule.label} must be a number.`);
-          valid = false;
-        } else if (num < rule.min || (rule.max !== null && num > rule.max)) {
-          markInvalid(el, true);
-          const range = rule.max !== null ? `between ${rule.min} and ${rule.max}` : `at least ${rule.min}`;
-          errors.push(`${rule.label} must be ${range}.`);
-          valid = false;
-        }
+  // Validate the form before sending data to the API.
+  function validateForm() {
+    let valid = true;
+
+    const requiredFields = [
+      "age",
+      "gender",
+      "country",
+      "academic_level",
+      "most_used_platform",
+      "purpose_of_use",
+      "daily_unlocks",
+      "stress_level"
+    ];
+
+    requiredFields.forEach((name) => setFieldError(name, ""));
+
+    requiredFields.forEach((name) => {
+      const control = form.elements.namedItem(name);
+
+      const value = name === "stress_level"
+        ? form.querySelector('input[name="stress_level"]:checked')?.value
+        : control.value.trim();
+
+      if (!value) {
+        const message = name === "stress_level"
+          ? "Please choose a stress level."
+          : "This field is required.";
+
+        setFieldError(name, message);
+        valid = false;
+      }
+    });
+
+    const age = Number(form.elements.age.value);
+
+    if (
+      form.elements.age.value &&
+      (!Number.isInteger(age) || age < 10 || age > 100)
+    ) {
+      setFieldError("age", "Enter a whole number from 10 to 100.");
+      valid = false;
+    }
+
+    const unlocks = Number(form.elements.daily_unlocks.value);
+
+    if (
+      form.elements.daily_unlocks.value &&
+      (!Number.isInteger(unlocks) || unlocks < 0)
+    ) {
+      setFieldError("daily_unlocks", "Enter a whole number of 0 or more.");
+      valid = false;
+    }
+
+    const rangeFields = [
+      "avg_daily_usage_hours",
+      "study_hours",
+      "physical_activity_hours",
+      "sleep_hours_per_night"
+    ];
+
+    rangeFields.forEach((name) => {
+      const value = Number(form.elements[name].value);
+
+      if (!Number.isFinite(value) || value < 0 || value > 24) {
+        setFieldError(name, "Enter a value from 0 to 24.");
+        valid = false;
+      } else {
+        setFieldError(name, "");
       }
     });
 
     if (!valid) {
-      // Show at most 2 toasts at a time so the stack stays readable
-      errors.slice(0, 2).forEach((msg) => showToast(msg));
+      const firstInvalid =
+        form.querySelector('[aria-invalid="true"]') ||
+        form.querySelector(".field.invalid input, .field.invalid select") ||
+        form.querySelector(".stress-pill input");
+
+      firstInvalid?.focus();
     }
+
     return valid;
   }
 
-  // ---------- STEP NAVIGATION ----------
-  function renderStep() {
-    steps.forEach((s) => s.classList.toggle('is-active', Number(s.dataset.step) === currentStep));
-    dots.forEach((d) => {
-      const i = Number(d.dataset.dot);
-      d.classList.toggle('is-active', i === currentStep);
-      d.classList.toggle('is-done', i < currentStep);
-    });
-    brandSteps.forEach((b) => {
-      const i = Number(b.dataset.step);
-      b.classList.toggle('is-active', i === currentStep);
-      b.classList.toggle('is-done', i < currentStep);
-    });
-
-    backBtn.classList.toggle('is-hidden', currentStep === 0);
-    const isLast = currentStep === steps.length - 1;
-    nextBtn.classList.toggle('is-hidden', isLast);
-    submitBtn.classList.toggle('is-hidden', !isLast);
-  }
-
-  nextBtn.addEventListener('click', () => {
-    if (!validateStep(currentStep)) return;
-    if (currentStep < steps.length - 1) {
-      currentStep += 1;
-      renderStep();
-    }
-  });
-
-  backBtn.addEventListener('click', () => {
-    if (currentStep > 0) {
-      currentStep -= 1;
-      renderStep();
-    }
-  });
-
-  // ---------- BUILD PAYLOAD ----------
+  // Build the request body using the exact API field names and numeric types.
   function buildPayload() {
-    const data = new FormData(form);
     return {
-      age: parseInt(data.get('age'), 10),
-      gender: data.get('gender'),
-      country: data.get('country').trim(),
-      academic_level: data.get('academic_level'),
-      most_used_platform: data.get('most_used_platform'),
-      purpose_of_use: data.get('purpose_of_use'),
-      avg_daily_usage_hours: parseFloat(data.get('avg_daily_usage_hours')),
-      daily_unlocks: parseInt(data.get('daily_unlocks'), 10),
-      study_hours: parseFloat(data.get('study_hours')),
-      physical_activity_hours: parseFloat(data.get('physical_activity_hours')),
-      sleep_hours_per_night: parseFloat(data.get('sleep_hours_per_night')),
-      stress_level: data.get('stress_level'),
+      age: Number(form.elements.age.value),
+      gender: form.elements.gender.value,
+      country: form.elements.country.value.trim(),
+      academic_level: form.elements.academic_level.value,
+      most_used_platform: form.elements.most_used_platform.value,
+      purpose_of_use: form.elements.purpose_of_use.value,
+      avg_daily_usage_hours: Number(
+        form.elements.avg_daily_usage_hours.value
+      ),
+      daily_unlocks: Number(form.elements.daily_unlocks.value),
+      study_hours: Number(form.elements.study_hours.value),
+      physical_activity_hours: Number(
+        form.elements.physical_activity_hours.value
+      ),
+      sleep_hours_per_night: Number(
+        form.elements.sleep_hours_per_night.value
+      ),
+      stress_level: form.querySelector(
+        'input[name="stress_level"]:checked'
+      ).value
     };
   }
 
-  // ---------- RESULT RENDERING ----------
-  const GAUGE_CIRCUMFERENCE = 251; // matches the SVG arc's path length approximation
-  const GAUGE_MAX = 10;
+  // Show an error toast/banner.
+  function showError(message) {
+    toast.textContent = message;
+    toast.classList.add("visible");
 
-  function tierFor(score) {
-    if (score <= 3) {
-      return {
-        tier: 'Feeling steady',
-        color: 'var(--sage)',
-        desc: 'The model reads this pattern of habits as low strain. Keep an eye on what\u2019s working and keep it up.',
-      };
-    }
-    if (score <= 6.5) {
-      return {
-        tier: 'Some strain showing',
-        color: 'var(--amber)',
-        desc: 'A mix of signals here — sleep, screen time or stress could be pulling in different directions. Worth a closer look.',
-      };
-    }
-    return {
-      tier: 'Under real pressure',
-      color: 'var(--coral)',
-      desc: 'This combination of habits reads as high strain in the model. Consider talking to someone you trust or a counselor.',
-    };
+    window.clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(() => {
+      toast.classList.remove("visible");
+    }, 6500);
   }
 
-  function showResult(score) {
-    const clamped = Math.max(0, Math.min(GAUGE_MAX, score));
-    const ratio = clamped / GAUGE_MAX;
-    const { tier, color, desc } = tierFor(clamped);
+  // Convert FastAPI validation details into a readable message.
+  function formatApiErrors(details) {
+    if (!Array.isArray(details) || details.length === 0) {
+      return "Some information needs checking. Please review your answers and try again.";
+    }
 
-    scoreValue.textContent = Number.isInteger(score) ? score : score.toFixed(1);
-    resultTier.textContent = tier;
-    resultDesc.textContent = desc;
-    gaugeFill.style.stroke = color;
+    const messages = details.map((item) => {
+      const field = Array.isArray(item.loc)
+        ? item.loc[item.loc.length - 1]
+        : "";
 
-    resultPanel.classList.remove('is-visible');
-    // force reflow so the transition + dash animation replay each time
-    void resultPanel.offsetWidth;
-    gaugeFill.style.strokeDashoffset = String(GAUGE_CIRCUMFERENCE);
-
-    resultPanel.classList.add('is-visible');
-    resultPanel.setAttribute('aria-hidden', 'false');
-
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        gaugeFill.style.strokeDashoffset = String(GAUGE_CIRCUMFERENCE * (1 - ratio));
-      });
+      const friendlyField = String(field || "answer").replaceAll("_", " ");
+      return `${friendlyField}: ${item.msg || "please check this value"}`;
     });
+
+    return `Please check your answers — ${messages.join("; ")}.`;
   }
 
-  function closeResult() {
-    resultPanel.classList.remove('is-visible');
-    resultPanel.setAttribute('aria-hidden', 'true');
-  }
-
-  resultClose.addEventListener('click', closeResult);
-  resultScrim.addEventListener('click', closeResult);
-  retakeBtn.addEventListener('click', () => {
-    closeResult();
-  });
-
-  // ---------- SUBMIT ----------
-  function setLoading(isLoading) {
-    loadingOverlay.classList.toggle('is-visible', isLoading);
-    loadingOverlay.setAttribute('aria-hidden', String(!isLoading));
-    submitBtn.disabled = isLoading;
-  }
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    if (!validateStep(currentStep)) return;
-
-    const payload = buildPayload();
-    setLoading(true);
+  // Send the prediction request, with a 15-second timeout.
+  async function predictScore(payload) {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 15000);
 
     try {
-      const response = await fetch(API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch(`${API_URL}/predict`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
         body: JSON.stringify(payload),
+        signal: controller.signal
       });
 
+      const data = await response.json().catch(() => ({}));
+
+      if (response.status === 422) {
+        throw new Error(formatApiErrors(data.detail));
+      }
+
       if (!response.ok) {
-        await handleApiError(response);
-        return;
+        throw new Error(
+          data.detail ||
+          `The server returned an error (${response.status}). Please try again.`
+        );
       }
 
-      const result = await response.json();
-      const score = Number(result.predicted_mental_health_score);
-
-      if (Number.isNaN(score)) {
-        showToast('The server returned an unexpected response. Please try again.');
-        return;
+      if (typeof data.predicted_mental_health_score !== "number") {
+        throw new Error(
+          "The server response did not include a valid prediction. Please try again."
+        );
       }
+
+      const score = Math.max(
+        0,
+        Math.min(10, Math.round(data.predicted_mental_health_score))
+      );
 
       showResult(score);
-    } catch (err) {
-      showToast('Could not reach the prediction server. Is it running on 127.0.0.1:8000?');
+    } catch (error) {
+      if (error.name === "AbortError") {
+        showError(
+          "The request took too long. Please check your connection and try again."
+        );
+      } else if (error instanceof TypeError) {
+        showError(
+          `Could not connect to the prediction server. Make sure the API is running at ${API_URL} and that CORS is enabled.`
+        );
+      } else {
+        showError(error.message || "Something went wrong. Please try again.");
+      }
     } finally {
+      window.clearTimeout(timeoutId);
       setLoading(false);
     }
   }
 
-  async function handleApiError(response) {
-    if (response.status === 422) {
-      try {
-        const body = await response.json();
-        const details = Array.isArray(body.detail) ? body.detail : [];
-        if (details.length) {
-          details.slice(0, 3).forEach((d) => {
-            const field = Array.isArray(d.loc) ? d.loc[d.loc.length - 1] : 'field';
-            showToast(`${field}: ${d.msg}`);
-          });
-          return;
-        }
-      } catch (_) {
-        // fall through to generic message
-      }
-      showToast('Some answers look invalid. Please review the form.');
+  // Toggle the submit button's loading state.
+  function setLoading(isLoading) {
+    submitButton.disabled = isLoading;
+    resetButton.disabled = isLoading;
+    submitButton.classList.toggle("is-loading", isLoading);
+    submitButton.setAttribute("aria-busy", String(isLoading));
+
+    submitButton.querySelector(".button-text").textContent = isLoading
+      ? "Finding your orbit…"
+      : "Predict My Score ✨";
+  }
+
+  // Form submission.
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    toast.classList.remove("visible");
+
+    if (!validateForm()) {
+      showError("Please check the highlighted fields before continuing.");
       return;
     }
 
-    showToast(`Prediction failed (status ${response.status}). Please try again.`);
+    setLoading(true);
+    await predictScore(buildPayload());
+  });
+
+  // Result content for scores from 0 to 3.
+  function renderMotivationCard() {
+    return `
+      <p class="result-kicker">MOTIVATION CARD · YOUR NEXT CHAPTER</p>
+      <span class="result-emoji" aria-hidden="true">💪</span>
+      <h2>Every Journey Starts With One Step 🌱</h2>
+      <p class="result-message">
+        Your score is just one snapshot—not the whole story. Small, caring
+        changes can make a difference, and you don’t have to figure it all out
+        alone.
+      </p>
+      <ul class="tips-list">
+        <li><i class="fa-solid fa-moon" aria-hidden="true"></i> Aim for a steady 7–8 hours of sleep.</li>
+        <li><i class="fa-solid fa-person-walking" aria-hidden="true"></i> Try a gentle 20-minute walk outdoors.</li>
+        <li><i class="fa-solid fa-mobile-screen" aria-hidden="true"></i> Give yourself a screen break each day.</li>
+        <li><i class="fa-solid fa-comments" aria-hidden="true"></i> Reach out and talk with someone you trust.</li>
+        <li><i class="fa-solid fa-wind" aria-hidden="true"></i> Pause for a few slow, mindful breaths.</li>
+      </ul>
+      <p class="gentle-note">
+        If you're feeling overwhelmed, consider reaching out to a mental health
+        professional or someone you trust.
+      </p>
+      <div class="result-actions">
+        <button class="button button-primary predict-again" type="button">
+          Predict Again
+        </button>
+      </div>`;
   }
 
-  form.addEventListener('submit', handleSubmit);
+  // Result content for scores from 4 to 7.
+  function renderKeepGoingCard() {
+    return `
+      <p class="result-kicker">KEEP GOING CARD · FIND YOUR BALANCE</p>
+      <span class="result-emoji" aria-hidden="true">😊</span>
+      <h2>You're Doing Great – Keep It Up! 🌿</h2>
+      <p class="result-message">
+        You’re building a steady foundation. Keep noticing what helps you feel
+        balanced, and give yourself credit for the healthy choices you’re making.
+      </p>
+      <ul class="tips-list">
+        <li><i class="fa-solid fa-calendar-check" aria-hidden="true"></i> Keep a consistent daily routine.</li>
+        <li><i class="fa-solid fa-palette" aria-hidden="true"></i> Make time for hobbies that recharge you.</li>
+        <li><i class="fa-solid fa-mobile-screen" aria-hidden="true"></i> Take mindful breaks from scrolling.</li>
+        <li><i class="fa-solid fa-person-running" aria-hidden="true"></i> Stay active in a way you enjoy.</li>
+      </ul>
+      <p class="gentle-note">
+        Wellness is personal and can change over time. Keep checking in with
+        yourself and celebrate your progress.
+      </p>
+      <div class="result-actions">
+        <button class="button button-primary predict-again" type="button">
+          Predict Again
+        </button>
+      </div>`;
+  }
 
-  // ---------- INIT ----------
-  renderStep();
+  // Result content for scores from 8 to 10.
+  function renderCelebrationCard() {
+    return `
+      <p class="result-kicker">WOWWW CELEBRATION CARD · YOU'RE SHINING</p>
+      <span class="result-emoji" aria-hidden="true">🏆</span>
+      <h2>WOOHOO! You're Absolutely Glowing! 🌟</h2>
+      <p class="result-message">
+        Look at you go! Your result reflects some wonderfully positive habits.
+        Take a moment to feel proud of the care and intention you’re bringing to
+        your wellbeing.
+      </p>
+      <ul class="tips-list">
+        <li><i class="fa-solid fa-star" aria-hidden="true"></i> Keep nurturing the habits that feel good.</li>
+        <li><i class="fa-solid fa-heart" aria-hidden="true"></i> Make space for rest and meaningful connection.</li>
+        <li><i class="fa-solid fa-seedling" aria-hidden="true"></i> Keep growing at your own pace.</li>
+        <li><i class="fa-solid fa-face-smile" aria-hidden="true"></i> Share your good energy—and enjoy it!</li>
+      </ul>
+      <p class="gentle-note">
+        Every person’s experience is unique. Keep listening to yourself, even
+        when things are going well.
+      </p>
+      <div class="result-actions">
+        <button class="button button-primary" id="celebrate-again" type="button">
+          Celebrate Again 🎊
+        </button>
+        <button class="button button-quiet predict-again" type="button">
+          Predict Again
+        </button>
+      </div>`;
+  }
+
+  // Display the correct result card and animate its score.
+  function showResult(score) {
+    formView.hidden = true;
+    resultView.hidden = false;
+
+    let theme;
+    let content;
+
+    if (score <= 3) {
+      theme = "motivation";
+      content = renderMotivationCard();
+    } else if (score <= 7) {
+      theme = "keep-going";
+      content = renderKeepGoingCard();
+    } else {
+      theme = "celebration";
+      content = renderCelebrationCard();
+    }
+
+    resultCard.className = `glass-card result-card ${theme}`;
+    resultCard.innerHTML = `
+      <div class="score-layout">
+        <div class="score-ring" role="img" aria-label="Mental wellness score: ${score} out of 10">
+          <svg viewBox="0 0 120 120" aria-hidden="true">
+            <circle class="ring-track" cx="60" cy="60" r="54"></circle>
+            <circle class="ring-progress" cx="60" cy="60" r="54"></circle>
+          </svg>
+          <div class="score-number">
+            <span id="score-counter">0</span>
+            <small>OUT OF 10</small>
+          </div>
+        </div>
+        <div class="score-summary">
+          <strong>Your wellness snapshot</strong>
+          A moment to reflect, learn, and keep moving forward.
+        </div>
+      </div>
+      ${content}`;
+
+    animateScore(score);
+    resultView.scrollIntoView({
+      behavior: reducedMotion ? "auto" : "smooth",
+      block: "center"
+    });
+
+    resultCard.querySelectorAll(".predict-again").forEach((button) => {
+      button.addEventListener("click", resetForm);
+    });
+
+    const celebrateButton = document.getElementById("celebrate-again");
+    celebrateButton?.addEventListener("click", () => launchConfetti(true));
+
+    if (score >= 8) {
+      launchConfetti(false);
+    }
+  }
+
+  // Count the score up and animate the circular progress ring.
+  function animateScore(score) {
+    const counter = document.getElementById("score-counter");
+    const ring = resultCard.querySelector(".ring-progress");
+    const circumference = 2 * Math.PI * 54;
+
+    ring.style.strokeDasharray = String(circumference);
+    ring.style.strokeDashoffset = String(circumference);
+
+    requestAnimationFrame(() => {
+      ring.style.strokeDashoffset = String(
+        circumference * (1 - score / 10)
+      );
+    });
+
+    if (reducedMotion) {
+      counter.textContent = String(score);
+      return;
+    }
+
+    const duration = 1100;
+    const start = performance.now();
+
+    function tick(now) {
+      const progress = Math.min((now - start) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+
+      counter.textContent = String(Math.round(score * eased));
+
+      if (progress < 1) {
+        requestAnimationFrame(tick);
+      }
+    }
+
+    requestAnimationFrame(tick);
+  }
+
+  // Reset the questionnaire and return from the result card.
+  function resetForm() {
+    form.reset();
+
+    document.querySelectorAll(".field-error").forEach((error) => {
+      error.textContent = "";
+    });
+
+    document.querySelectorAll(".field.invalid").forEach((field) => {
+      field.classList.remove("invalid");
+    });
+
+    document
+      .querySelectorAll('input[aria-invalid="true"], select[aria-invalid="true"]')
+      .forEach((control) => control.removeAttribute("aria-invalid"));
+
+    document.querySelectorAll('input[type="range"]').forEach(updateRange);
+
+    resultView.hidden = true;
+    formView.hidden = false;
+    toast.classList.remove("visible");
+
+    formView.scrollIntoView({
+      behavior: reducedMotion ? "auto" : "smooth",
+      block: "start"
+    });
+  }
+
+  resetButton.addEventListener("click", () => {
+    window.setTimeout(() => {
+      document.querySelectorAll('input[type="range"]').forEach(updateRange);
+
+      document.querySelectorAll(".field-error").forEach((error) => {
+        error.textContent = "";
+      });
+
+      document.querySelectorAll(".field.invalid").forEach((field) => {
+        field.classList.remove("invalid");
+      });
+    }, 0);
+  });
+
+  // Universe canvas: orbiting stars, parallax, and occasional shooting stars.
+  const universeContext = universeCanvas.getContext("2d");
+
+  function initStars() {
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const count = Math.min(
+      420,
+      Math.max(150, Math.floor((width * height) / 4300))
+    );
+
+    stars = Array.from({ length: count }, () => {
+      const layer = Math.random();
+
+      return {
+        angle: Math.random() * Math.PI * 2,
+        radius: Math.sqrt(Math.random()) * Math.max(width, height) * 0.75,
+        speed:
+          (Math.random() * 0.000045 + 0.000008) *
+          (layer < 0.33 ? 1.7 : layer < 0.7 ? 1 : 0.55) *
+          (Math.random() < 0.5 ? -1 : 1),
+        size: Math.random() * 1.5 + 0.25,
+        alpha: Math.random() * 0.65 + 0.2,
+        phase: Math.random() * Math.PI * 2,
+        layer
+      };
+    });
+  }
+
+  function resizeCanvas(canvas, context) {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+    canvas.width = Math.floor(window.innerWidth * dpr);
+    canvas.height = Math.floor(window.innerHeight * dpr);
+    canvas.style.width = `${window.innerWidth}px`;
+    canvas.style.height = `${window.innerHeight}px`;
+
+    context.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function createShootingStar() {
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+
+    shootingStars.push({
+      x: Math.random() * width * 0.8,
+      y: Math.random() * height * 0.4,
+      vx: 7 + Math.random() * 5,
+      vy: 3 + Math.random() * 3,
+      life: 1,
+      length: 90 + Math.random() * 100
+    });
+  }
+
+  function animateStars(time = 0) {
+    const ctx = universeContext;
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+
+    ctx.clearRect(0, 0, width, height);
+
+    const centerX = width / 2 + pointer.x * 18;
+    const centerY = height / 2 + pointer.y * 18;
+
+    // Draw a soft nebula haze.
+    const haze = ctx.createRadialGradient(
+      centerX - width * 0.2,
+      centerY - height * 0.23,
+      0,
+      centerX - width * 0.2,
+      centerY - height * 0.23,
+      Math.max(width, height) * 0.7
+    );
+
+    haze.addColorStop(0, "rgba(103, 61, 173, 0.09)");
+    haze.addColorStop(0.48, "rgba(47, 53, 119, 0.035)");
+    haze.addColorStop(1, "rgba(0,0,0,0)");
+
+    ctx.fillStyle = haze;
+    ctx.fillRect(0, 0, width, height);
+
+    stars.forEach((star) => {
+      if (!reducedMotion) {
+        star.angle += star.speed * 16;
+      }
+
+      const parallax = (star.layer - 0.5) * 23;
+      const x =
+        centerX +
+        Math.cos(star.angle) * star.radius +
+        pointer.x * parallax;
+      const y =
+        centerY +
+        Math.sin(star.angle) * star.radius * 0.67 +
+        pointer.y * parallax;
+
+      const twinkle = reducedMotion
+        ? 1
+        : 0.7 + Math.sin(time * 0.0012 + star.phase) * 0.3;
+
+      ctx.beginPath();
+      ctx.fillStyle = `rgba(220, 226, 255, ${star.alpha * twinkle})`;
+      ctx.arc(x, y, star.size, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    if (!reducedMotion && Math.random() < 0.006) {
+      createShootingStar();
+    }
+
+    shootingStars = shootingStars.filter((shot) => shot.life > 0);
+
+    shootingStars.forEach((shot) => {
+      const gradient = ctx.createLinearGradient(
+        shot.x,
+        shot.y,
+        shot.x - shot.vx * 9,
+        shot.y - shot.vy * 9
+      );
+
+      gradient.addColorStop(0, `rgba(255,255,255,${shot.life})`);
+      gradient.addColorStop(1, "rgba(145,130,255,0)");
+
+      ctx.strokeStyle = gradient;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(shot.x, shot.y);
+      ctx.lineTo(
+        shot.x - shot.vx * shot.length / 10,
+        shot.y - shot.vy * shot.length / 10
+      );
+      ctx.stroke();
+
+      shot.x += shot.vx;
+      shot.y += shot.vy;
+      shot.life -= 0.012;
+    });
+
+    if (!reducedMotion) {
+      animationFrame = requestAnimationFrame(animateStars);
+    }
+  }
+
+  function startUniverse() {
+    resizeCanvas(universeCanvas, universeContext);
+    initStars();
+
+    if (animationFrame) {
+      cancelAnimationFrame(animationFrame);
+    }
+
+    animateStars();
+  }
+
+  window.addEventListener("resize", startUniverse);
+
+  window.addEventListener(
+    "pointermove",
+    (event) => {
+      pointer.x = (event.clientX / window.innerWidth - 0.5) * 2;
+      pointer.y = (event.clientY / window.innerHeight - 0.5) * 2;
+    },
+    { passive: true }
+  );
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+      if (confettiFrame) cancelAnimationFrame(confettiFrame);
+
+      animationFrame = null;
+      confettiFrame = null;
+    } else {
+      startUniverse();
+
+      if (confettiParticles.length) {
+        animateConfetti();
+      }
+    }
+  });
+
+  // Custom confetti canvas for celebration results.
+  const confettiContext = confettiCanvas.getContext("2d");
+
+  function resizeConfettiCanvas() {
+    resizeCanvas(confettiCanvas, confettiContext);
+  }
+
+  function launchConfetti(retrigger = false) {
+    resizeConfettiCanvas();
+
+    if (retrigger) {
+      confettiParticles = [];
+    }
+
+    const colors = [
+      "#ffd166",
+      "#ff70b8",
+      "#8c70ff",
+      "#50d9ed",
+      "#67e6b7",
+      "#ffffff"
+    ];
+
+    const burstCount = 170;
+
+    for (let index = 0; index < burstCount; index += 1) {
+      confettiParticles.push({
+        x: Math.random() * window.innerWidth,
+        y: -20 - Math.random() * window.innerHeight * 0.7,
+        vx: (Math.random() - 0.5) * 3.2,
+        vy: 1.4 + Math.random() * 4,
+        size: 3 + Math.random() * 5,
+        rotation: Math.random() * Math.PI,
+        rotationSpeed: (Math.random() - 0.5) * 0.16,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        shape: Math.random() > 0.25 ? "rect" : "star",
+        life: 1
+      });
+    }
+
+    lastConfettiTime = performance.now();
+    animateConfetti();
+  }
+
+  function animateConfetti(now = performance.now()) {
+    if (document.hidden) return;
+
+    if (confettiFrame) {
+      cancelAnimationFrame(confettiFrame);
+    }
+
+    const elapsed = now - lastConfettiTime;
+    const ctx = confettiContext;
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+
+    ctx.clearRect(0, 0, width, height);
+
+    confettiParticles = confettiParticles.filter(
+      (particle) => particle.y < height + 30 && particle.life > 0
+    );
+
+    confettiParticles.forEach((particle) => {
+      particle.x += particle.vx;
+      particle.y += particle.vy;
+      particle.vy += 0.025;
+      particle.rotation += particle.rotationSpeed;
+      particle.life -= 0.0018;
+
+      ctx.save();
+      ctx.translate(particle.x, particle.y);
+      ctx.rotate(particle.rotation);
+      ctx.globalAlpha = Math.max(0, particle.life);
+      ctx.fillStyle = particle.color;
+
+      if (particle.shape === "star") {
+        ctx.font = `${particle.size * 2.2}px sans-serif`;
+        ctx.fillText("✦", 0, 0);
+      } else {
+        ctx.fillRect(
+          -particle.size / 2,
+          -particle.size / 2,
+          particle.size,
+          particle.size * 1.7
+        );
+      }
+
+      ctx.restore();
+    });
+
+    if (confettiParticles.length && elapsed < 7000) {
+      confettiFrame = requestAnimationFrame(animateConfetti);
+    } else {
+      confettiParticles = [];
+      ctx.clearRect(0, 0, width, height);
+      confettiFrame = null;
+    }
+  }
+
+  // Start the background animations.
+  resizeConfettiCanvas();
+  startUniverse();
 })();

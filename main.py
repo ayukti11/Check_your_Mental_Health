@@ -40,10 +40,6 @@ class PredictionResponse(BaseModel):
 
 
 
-
-
-
-
 @app.get('/')
 def greet():
     return {'Welcome to Test your Mental Health Score Prediction'}
